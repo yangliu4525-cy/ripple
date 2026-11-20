@@ -16,15 +16,14 @@ canvas{display:block;width:100vw;height:100vh;object-fit:cover}
 <canvas id="glCanvas"></canvas>
 
 <script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/control_utils/control_utils.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@mediapipe/drawing_utils/drawing_utils.js"></script>
 
 <script>
 const canvas = document.getElementById('glCanvas');
 const gl = canvas.getContext('webgl');
 const ui = document.getElementById('ui');
 let w, h;
+let video;
+let lineList = [];
 
 const vs = `
 attribute vec2 a_pos;
@@ -49,7 +48,6 @@ float sdLine(vec2 p, vec2 a, vec2 b){
 
 void main(){
   vec2 uv = v_uv;
-  vec2 px = 1./u_res;
   vec3 col = texture2D(u_cam, uv).rgb;
   float mask = 0.;
   float rim = 0.;
@@ -86,6 +84,9 @@ function compile(src,type){
   const s = gl.createShader(type);
   gl.shaderSource(s,src);
   gl.compileShader(s);
+  if(!gl.getShaderParameter(s, gl.COMPILE_STATUS)){
+    console.error(gl.getShaderInfoLog(s));
+  }
   return s;
 }
 const prog = gl.createProgram();
@@ -111,11 +112,11 @@ gl.bindTexture(gl.TEXTURE_2D, camTex);
 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
 gl.texParameteri(gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 
-let lineList = [];
-
-const hands = new Hands({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
+const hands = new Hands({
+  locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/hands/${file}`
+});
 hands.setOptions({
   maxNumHands:2,
   modelComplexity:1,
@@ -143,11 +144,29 @@ hands.onResults(res=>{
   ui.innerText = lineList.length>0?"手势追踪成功":"把手放到镜头前";
 });
 
-const camera = new CameraUtils.Camera(
-  {video:document.createElement('video')},
-  {onFrame:async(img)=>await hands.send({image:img})}
-);
-camera.start();
+// 原生摄像头，不再用容易卡住的 CameraUtils
+async function startCamera(){
+  try{
+    video = document.createElement('video');
+    video.autoplay = true;
+    video.playsInline = true;
+    video.muted = true;
+    const stream = await navigator.mediaDevices.getUserMedia({video:{facingMode:'user'}});
+    video.srcObject = stream;
+    await video.play();
+    ui.innerText = "模型加载完成";
+    requestAnimationFrame(sendFrame);
+  }catch(err){
+    ui.innerText = "摄像头权限失败！请允许摄像头";
+    console.error(err);
+  }
+}
+async function sendFrame(){
+  if(video){
+    await hands.send({image:video});
+  }
+  requestAnimationFrame(sendFrame);
+}
 
 function resize(){
   w = window.innerWidth;
@@ -161,10 +180,9 @@ window.addEventListener('resize',resize);
 
 function draw(){
   requestAnimationFrame(draw);
-  const vid = camera.video;
-  if(vid && vid.readyState>=2){
+  if(video && video.readyState >=2){
     gl.bindTexture(gl.TEXTURE_2D,camTex);
-    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,vid);
+    gl.texImage2D(gl.TEXTURE_2D,0,gl.RGBA,gl.RGBA,gl.UNSIGNED_BYTE,video);
   }
   gl.uniform2f(u_res,w,h);
   const arr = new Float32Array(lineList);
@@ -173,6 +191,7 @@ function draw(){
   gl.drawArrays(gl.TRIANGLE_STRIP,0,4);
 }
 draw();
+startCamera();
 </script>
 </body>
 </html>
