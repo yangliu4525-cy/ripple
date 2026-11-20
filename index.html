@@ -26,7 +26,6 @@ const gl = canvas.getContext('webgl');
 const ui = document.getElementById('ui');
 let w, h;
 
-// Shader：核心就是【骨骼连线水膜、细轮廓高光、弱色散】
 const vs = `
 attribute vec2 a_pos;
 varying vec2 v_uv;
@@ -38,7 +37,7 @@ const fs = `
 precision highp float;
 uniform sampler2D u_cam;
 uniform vec2 u_res;
-uniform vec4 u_lines[48]; // 线段: x1,y1,x2,y2
+uniform vec4 u_lines[48];
 uniform int u_lineCount;
 varying vec2 v_uv;
 
@@ -61,20 +60,16 @@ void main(){
     vec2 a = seg.xy;
     vec2 b = seg.zw;
     float d = sdLine(uv, a, b);
-    // 水膜主体
     float water = smoothstep(0.045,0.012,d);
     mask += water*0.32;
-    // 轮廓细高光（就是视频里那条亮边）
     float r = smoothstep(0.018,0.006,d);
     rim += r;
   }
   mask = clamp(mask,0.,1.);
   rim = clamp(rim,0.,1.);
 
-  // 轻微折射偏移
   vec2 offset = vec2(rim*0.008, rim*0.004);
   vec3 refr = texture2D(u_cam, uv-offset).rgb;
-  // 一点点红边色散，和原版一致
   vec3 colR = texture2D(u_cam, uv-offset*1.2).rgb;
   vec3 colG = texture2D(u_cam, uv-offset*0.8).rgb;
   vec3 colB = texture2D(u_cam, uv-offset*0.6).rgb;
@@ -115,12 +110,11 @@ const camTex = gl.createTexture();
 gl.bindTexture(gl.TEXTURE_2D, camTex);
 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+gl.texParameteri(gl.TEXTURE_MIN_FILTER, gl.LINEAR);
 gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 
 let lineList = [];
 
-// MediaPipe Hands
 const hands = new Hands({locateFile:f=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}`});
 hands.setOptions({
   maxNumHands:2,
@@ -132,7 +126,6 @@ hands.onResults(res=>{
   lineList = [];
   if(res.multiHandLandmarks){
     for(const hand of res.multiHandLandmarks){
-      // 手指骨骼连线（0腕骨，1-4拇指，5-8食指，9-12中指，13-16无名指，17-20小指）
       const bones = [
         [0,1],[1,2],[2,3],[3,4],
         [0,5],[5,6],[6,7],[7,8],
@@ -143,7 +136,6 @@ hands.onResults(res=>{
       for(const [a,b] of bones){
         const p1 = hand[a];
         const p2 = hand[b];
-        // uv坐标：y翻转
         lineList.push(p1.x,1.-p1.y, p2.x,1.-p2.y);
       }
     }
